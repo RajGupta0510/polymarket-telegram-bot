@@ -1,6 +1,6 @@
 import requests
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 # =====================
 # TELEGRAM DETAILS
@@ -52,9 +52,9 @@ while True:
             slug = trade.get("slug") or trade.get("market_slug")
             link = f"https://polymarket.com/market/{slug}" if slug else "https://polymarket.com"
 
-            from datetime import timezone
-
-time_utc = datetime.fromtimestamp(timestamp, timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            time_utc = datetime.fromtimestamp(
+                timestamp, timezone.utc
+            ).strftime("%Y-%m-%d %H:%M:%S UTC")
 
             if value < MIN_TRADE_USD:
                 last_seen_timestamp = max(last_seen_timestamp, timestamp)
@@ -79,3 +79,4 @@ time_utc = datetime.fromtimestamp(timestamp, timezone.utc).strftime("%Y-%m-%d %H
 
     time.sleep(CHECK_INTERVAL)
 
+    
