@@ -1,42 +1,99 @@
-import requests
+import os
 import time
+import requests
 from datetime import datetime, timezone
 
 # =====================
-# TELEGRAM DETAILS
+# TELEGRAM CONFIG
 # =====================
 
-BOT_TOKEN = "8489375950:AAG9i5uoKFA4XgtwHwDN9BgO2ws23uwmoh4"
-CHAT_ID = 1849671800
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = int(os.getenv("CHAT_ID"))
 
 # =====================
-# POLYMARKET SETTINGS
+# POLYMARKET CONFIG
 # =====================
 
-POLYMARKET_API = "https://data-api.polymarket.com/trades?limit=100"
+POLYMARKET_TRADES_API = "https://data-api.polymarket.com/trades?limit=100"
+POLYMARKET_MARKETS_API = "https://data-api.polymarket.com/markets?limit=50"
+
 CHECK_INTERVAL = 5
-MIN_TRADE_USD = 0
+MIN_TRADE_USD = 500  # 🔥 MIN USD ALERT
 
 last_seen_timestamp = 0
+last_update_id = 0
 
 # =====================
-# TELEGRAM FUNCTION
+# TELEGRAM FUNCTIONS
 # =====================
 
 def send_message(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    data = {"chat_id": CHAT_ID, "text": text}
-    requests.post(url, json=data)
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": text,
+        "disable_web_page_preview": True
+    }
+    requests.post(url, json=payload)
+
+# =====================
+# /price COMMAND
+# =====================
+
+def handle_price_command():
+    try:
+        markets = requests.get(POLYMARKET_MARKETS_API).json()
+        messages = []
+
+        for m in markets:
+            title = m.get("title")
+            yes_price = m.get("yes_price")
+            no_price = m.get("no_price")
+            slug = m.get("slug")
+
+            if not title or yes_price is None or no_price is None:
+                continue
+
+            link = f"https://polymarket.com/market/{slug}"
+
+            messages.append(
+                f"{title}\nYES: {yes_price} | NO: {no_price}\n{link}"
+            )
+
+        if messages:
+            send_message("POLYMARKET PRICES\n\n" + "\n\n".join(messages[:5]))
+        else:
+            send_message("No Polymarket prices found.")
+
+    except Exception as e:
+        send_message(f"Error fetching prices: {e}")
+
+# =====================
+# STARTUP MESSAGE
+# =====================
+
+send_message("Polymarket trade bot is now running.")
 
 # =====================
 # MAIN LOOP
 # =====================
 
-send_message("Polymarket trade bot is now running.")
-
 while True:
     try:
-        trades = requests.get(POLYMARKET_API).json()
+        # -------- TELEGRAM COMMANDS --------
+        updates = requests.get(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={last_update_id + 1}"
+        ).json()
+
+        for u in updates.get("result", []):
+            last_update_id = u["update_id"]
+            text = u.get("message", {}).get("text", "")
+
+            if text == "/price":
+                handle_price_command()
+
+        # -------- POLYMARKET TRADES --------
+        trades = requests.get(POLYMARKET_TRADES_API).json()
 
         for trade in trades:
             timestamp = trade.get("timestamp", 0)
@@ -79,4 +136,3 @@ while True:
 
     time.sleep(CHECK_INTERVAL)
 
-    
