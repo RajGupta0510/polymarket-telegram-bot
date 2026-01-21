@@ -52,7 +52,9 @@ while True:
             slug = trade.get("slug") or trade.get("market_slug")
             link = f"https://polymarket.com/market/{slug}" if slug else "https://polymarket.com"
 
-            time_utc = datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S UTC")
+            from datetime import timezone
+
+time_utc = datetime.fromtimestamp(timestamp, timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
             if value < MIN_TRADE_USD:
                 last_seen_timestamp = max(last_seen_timestamp, timestamp)
@@ -76,3 +78,4 @@ while True:
         print("Error:", e)
 
     time.sleep(CHECK_INTERVAL)
+
