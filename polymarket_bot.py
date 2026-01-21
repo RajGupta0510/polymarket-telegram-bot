@@ -18,7 +18,7 @@ POLYMARKET_TRADES_API = "https://data-api.polymarket.com/trades?limit=100"
 POLYMARKET_MARKETS_API = "https://data-api.polymarket.com/markets?limit=50"
 
 CHECK_INTERVAL = 5
-MIN_TRADE_USD = 500  # 🔥 MIN USD ALERT
+MIN_TRADE_USD = 200  # 🔥 MIN USD ALERT
 
 last_seen_timestamp = 0
 last_update_id = 0
@@ -135,4 +135,5 @@ while True:
         print("Error:", e)
 
     time.sleep(CHECK_INTERVAL)
+
 
