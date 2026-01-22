@@ -15,12 +15,12 @@ CHAT_ID = int(os.getenv("CHAT_ID"))
 # =====================
 
 POLYMARKET_TRADES_API = "https://data-api.polymarket.com/trades?limit=500"
-POLYMARKET_MARKETS_API = "https://data-api.polymarket.com/markets?limit=100"
+POLYMARKET_MARKETS_API = "https://data-api.polymarket.com/markets?limit=200"
 
-CHECK_INTERVAL = 5
+CHECK_INTERVAL = 5   # seconds (near real-time)
 
-MIN_TRADE_USD = 500        # whale filter
-MAX_PRICE_ALERT = 0.60     # price filter (60 cents)
+MIN_TRADE_USD = 500        # 🔥 whale filter
+MAX_PRICE_ALERT = 0.60     # 🔥 max price filter (60 cents)
 
 # =====================
 # STATE (MODE 1)
@@ -28,7 +28,7 @@ MAX_PRICE_ALERT = 0.60     # price filter (60 cents)
 
 last_update_id = 0
 seen_trades = set()
-market_cache = {}   # slug -> created_time
+market_cache = {}
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -45,46 +45,52 @@ def send_message(text):
     }
     requests.post(url, json=payload, timeout=10)
 
+
 # =====================
-# MARKET HELPERS
+# MARKET LIVE TIME
 # =====================
 
 def fetch_market_live_time(slug):
-    """
-    Fetch market creation time from Polymarket and cache it.
-    """
+    if not slug:
+        return "Not Provided by API"
+
     if slug in market_cache:
         return market_cache[slug]
 
     try:
-        res = requests.get(POLYMARKET_MARKETS_API, timeout=10).json()
-        for market in res:
-            if market.get("slug") == slug:
-                created = (
-                    market.get("created_at")
-                    or market.get("createdAt")
-                    or market.get("created_time")
-                    or market.get("start_date")
-                )
+        url = f"https://data-api.polymarket.com/markets/{slug}"
+        res = requests.get(url, timeout=10).json()
 
-                if created:
-                    # handle ISO format
-                    try:
-                        dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
-                    except:
-                        dt = datetime.fromtimestamp(float(created), timezone.utc)
+        created = (
+            res.get("created_at")
+            or res.get("createdAt")
+            or res.get("start_date")
+            or res.get("startDate")
+            or res.get("created_time")
+        )
 
-                    dt_ist = dt.astimezone(IST).strftime("%d %b %Y %I:%M %p IST")
-                    market_cache[slug] = dt_ist
-                    return dt_ist
+        if created:
+            try:
+                dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            except:
+                try:
+                    dt = datetime.fromtimestamp(float(created), timezone.utc)
+                except:
+                    market_cache[slug] = "Not Provided by API"
+                    return "Not Provided by API"
+
+            dt_ist = dt.astimezone(IST).strftime("%d %b %Y %I:%M %p IST")
+            market_cache[slug] = dt_ist
+            return dt_ist
+
     except:
         pass
 
-    market_cache[slug] = "Unknown"
-    return "Unknown"
+    market_cache[slug] = "Not Provided by API"
+    return "Not Provided by API"
 
 # =====================
-# COMMAND HANDLER
+# TELEGRAM COMMANDS
 # =====================
 
 def handle_commands():
@@ -108,13 +114,13 @@ def handle_commands():
 
         elif text.startswith("/sports"):
             send_category_markets(
-                ["vs", "match", "final", "league", "cup", "open", "tournament"],
+                ["vs", "match", "final", "league", "cup", "open"],
                 "🏟️ SPORTS MARKETS"
             )
 
         elif text.startswith("/nba"):
             send_category_markets(
-                ["nba", "lakers", "warriors", "celtics", "bucks"],
+                ["nba", "lakers", "warriors", "celtics", "bucks", "heat", "nets"],
                 "🏀 NBA MARKETS"
             )
 
@@ -132,13 +138,12 @@ def handle_commands():
 
         elif text.startswith("/geopolitics"):
             send_category_markets(
-                ["war", "conflict", "china", "taiwan",
-                 "russia", "ukraine", "israel", "iran"],
+                ["war", "conflict", "china", "taiwan", "russia", "ukraine", "israel", "iran"],
                 "🌍 GEOPOLITICS MARKETS"
             )
 
 # =====================
-# MARKET COMMANDS
+# MARKET COMMAND FUNCTIONS
 # =====================
 
 def send_price_markets():
@@ -165,13 +170,16 @@ def send_price_markets():
 
         msg += (
             f"{title}\n"
-            f"YES: {int(yes_price * 100)}%\n"
+            f"YES: {int(yes_price * 100)}¢\n"
             f"{link}\n\n"
         )
 
         count += 1
         if count >= 6:
             break
+
+    if count == 0:
+        msg += "No matching price markets found under filters."
 
     send_message(msg.strip())
 
@@ -193,8 +201,8 @@ def send_category_markets(keywords, header):
         if not outcomes:
             continue
 
-        price = outcomes[0].get("price")
-        if price is None or price > MAX_PRICE_ALERT:
+        yes_price = outcomes[0].get("price")
+        if yes_price is None or yes_price > MAX_PRICE_ALERT:
             continue
 
         slug = market.get("slug")
@@ -202,13 +210,16 @@ def send_category_markets(keywords, header):
 
         msg += (
             f"{title}\n"
-            f"YES: {int(price * 100)}%\n"
+            f"YES: {int(yes_price * 100)}¢\n"
             f"{link}\n\n"
         )
 
         count += 1
         if count >= 6:
             break
+
+    if count == 0:
+        msg += "No matching markets found under filters."
 
     send_message(msg.strip())
 
@@ -234,11 +245,11 @@ while True:
             size = float(trade.get("size", 0))
             value = price * size
 
-            # PRICE FILTER
+            # 🔥 Price filter
             if price > MAX_PRICE_ALERT:
                 continue
 
-            # USD FILTER
+            # 🔥 USD whale filter
             if value < MIN_TRADE_USD:
                 continue
 
@@ -250,30 +261,20 @@ while True:
                 f"{size}"
             )
 
-            # MODE 1 DEDUP
+            # ✅ MODE 1 DEDUP
             if trade_id in seen_trades:
                 continue
 
             title = trade.get("title", "Unknown Market")
+
+            # Position logic (sports + yes/no support)
+            side_raw = trade.get("side", "").upper()
+            position = trade.get("outcome") or ("YES" if side_raw == "BUY" else "NO")
+
             slug = trade.get("slug") or trade.get("market_slug")
             link = f"https://polymarket.com/market/{slug}"
 
-            outcomes = trade.get("outcomes")
-
-            # SMART POSITION LOGIC
-            position = None
-            side_raw = trade.get("side", "").upper()
-
-            if outcomes and isinstance(outcomes, list) and len(outcomes) >= 2:
-                if side_raw == "BUY":
-                    position = outcomes[0].get("name")
-                else:
-                    position = outcomes[1].get("name")
-            else:
-                position = "YES" if side_raw == "BUY" else "NO"
-
-            # TIMES
-            trade_time = datetime.fromtimestamp(
+            trade_time_ist = datetime.fromtimestamp(
                 timestamp, IST
             ).strftime("%d %b %Y %I:%M %p IST")
 
@@ -283,11 +284,11 @@ while True:
                 "📢 POLYMARKET TRADE ALERT\n\n"
                 f"Market: {title}\n"
                 f"Position: {position}\n"
-                f"Price: ${price}\n"
+                f"Price: ${round(price,4)}\n"
                 f"Size: {int(size)} shares\n"
                 f"Value: ${value:,.2f}\n"
                 f"Market Live: {market_live}\n"
-                f"Trade Time: {trade_time}\n\n"
+                f"Trade Time: {trade_time_ist}\n\n"
                 f"Trade here:\n{link}"
             )
 
