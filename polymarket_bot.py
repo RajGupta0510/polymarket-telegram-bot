@@ -18,14 +18,17 @@ POLYMARKET_TRADES_API = "https://data-api.polymarket.com/trades?limit=500"
 POLYMARKET_MARKETS_API = "https://data-api.polymarket.com/markets?limit=100"
 
 CHECK_INTERVAL = 5
-MIN_TRADE_USD = 500   # 🔧 CHANGE WHEN NEEDED
+
+MIN_TRADE_USD = 500        # 🔥 whale filter
+MAX_PRICE_ALERT = 0.60     # 🔥 price filter (60 cents)
 
 # =====================
-# STATE
+# STATE (MODE 1)
 # =====================
 
-last_seen_timestamp = 0
 last_update_id = 0
+seen_trades = set()
+
 IST = timezone(timedelta(hours=5, minutes=30))
 
 # =====================
@@ -63,38 +66,37 @@ def handle_commands():
 
         elif text.startswith("/sports"):
             send_category_markets(
-                ["win", "match", "vs", "final", "league", "cup", "score"],
+                ["win", "match", "vs", "final", "league", "cup"],
                 "🏟️ SPORTS MARKETS"
             )
 
         elif text.startswith("/nba"):
             send_category_markets(
-                ["nba", "lakers", "warriors", "celtics", "bucks", "playoffs"],
+                ["nba", "lakers", "warriors", "celtics", "bucks"],
                 "🏀 NBA MARKETS"
             )
 
         elif text.startswith("/ufc"):
             send_category_markets(
-                ["ufc", "fight", "knockout", "submission", "round"],
+                ["ufc", "fight", "knockout", "submission"],
                 "🥊 UFC MARKETS"
             )
 
         elif text.startswith("/cricket"):
             send_category_markets(
-                ["cricket", "ipl", "odi", "t20", "test", "world cup"],
+                ["cricket", "ipl", "odi", "t20", "test"],
                 "🏏 CRICKET MARKETS"
             )
 
         elif text.startswith("/geopolitics"):
             send_category_markets(
-                ["war", "conflict", "china", "taiwan", "russia",
-                 "ukraine", "israel", "iran"],
+                ["war", "conflict", "china", "taiwan",
+                 "russia", "ukraine", "israel", "iran"],
                 "🌍 GEOPOLITICS MARKETS"
             )
 
-
 # =====================
-# MARKET COMMAND HELPERS
+# MARKET COMMANDS
 # =====================
 
 def send_price_markets():
@@ -113,15 +115,19 @@ def send_price_markets():
             continue
 
         yes_price = outcomes[0].get("price")
-        if yes_price is None:
+        if yes_price is None or yes_price > MAX_PRICE_ALERT:
             continue
 
         slug = market.get("slug")
         link = f"https://polymarket.com/market/{slug}"
 
-        msg += f"{title}\nYES: {int(yes_price * 100)}%\n{link}\n\n"
-        count += 1
+        msg += (
+            f"{title}\n"
+            f"YES: {int(yes_price * 100)}%\n"
+            f"{link}\n\n"
+        )
 
+        count += 1
         if count >= 6:
             break
 
@@ -146,28 +152,32 @@ def send_category_markets(keywords, header):
             continue
 
         yes_price = outcomes[0].get("price")
-        if yes_price is None:
+        if yes_price is None or yes_price > MAX_PRICE_ALERT:
             continue
 
         slug = market.get("slug")
         link = f"https://polymarket.com/market/{slug}"
 
-        msg += f"{title}\nYES: {int(yes_price * 100)}%\n{link}\n\n"
-        count += 1
+        msg += (
+            f"{title}\n"
+            f"YES: {int(yes_price * 100)}%\n"
+            f"{link}\n\n"
+        )
 
+        count += 1
         if count >= 6:
             break
 
     send_message(msg.strip())
 
 # =====================
-# STARTUP MESSAGE
+# STARTUP
 # =====================
 
 send_message("✅ Polymarket trade bot is now running.")
 
 # =====================
-# MAIN LOOP (UNCHANGED)
+# MAIN LOOP (MODE 1)
 # =====================
 
 while True:
@@ -177,26 +187,37 @@ while True:
         trades = requests.get(POLYMARKET_TRADES_API, timeout=15).json()
 
         for trade in trades:
-            timestamp = trade.get("timestamp", 0)
-
-            # ✅ TIMESTAMP FIX
-            if timestamp < last_seen_timestamp:
-                continue
-
+            timestamp = trade.get("timestamp")
             price = float(trade.get("price", 0))
             size = float(trade.get("size", 0))
             value = price * size
 
-            # ✅ USD TOLERANCE
-            if value + 1 < MIN_TRADE_USD:
+            # 🔥 PRICE FILTER
+            if price > MAX_PRICE_ALERT:
+                continue
+
+            # 🔥 USD FILTER
+            if value < MIN_TRADE_USD:
+                continue
+
+            trade_id = (
+                f"{timestamp}-"
+                f"{trade.get('slug')}-"
+                f"{trade.get('side')}-"
+                f"{price}-"
+                f"{size}"
+            )
+
+            # ✅ MODE 1 DEDUP
+            if trade_id in seen_trades:
                 continue
 
             side_raw = trade.get("side", "").upper()
-            side = "YES" if side_raw == "BUY" else "NO" if side_raw == "SELL" else "UNKNOWN"
+            side = "YES" if side_raw == "BUY" else "NO"
 
             title = trade.get("title", "Unknown Prediction")
             slug = trade.get("slug") or trade.get("market_slug")
-            link = f"https://polymarket.com/market/{slug}" if slug else "https://polymarket.com"
+            link = f"https://polymarket.com/market/{slug}"
 
             time_ist = datetime.fromtimestamp(
                 timestamp, IST
@@ -214,11 +235,15 @@ while True:
             )
 
             send_message(msg)
-            last_seen_timestamp = max(last_seen_timestamp, timestamp)
+            seen_trades.add(trade_id)
 
     except Exception as e:
         print("Error:", e)
 
     time.sleep(CHECK_INTERVAL)
+
+
+    time.sleep(CHECK_INTERVAL)
+
 
 
