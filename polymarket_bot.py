@@ -66,7 +66,7 @@ def handle_commands():
 
         elif text.startswith("/sports"):
             send_category_markets(
-                ["vs", "match", "final", "league", "cup", "open", "tournament"],
+                ["win", "match", "vs", "final", "league", "cup"],
                 "🏟️ SPORTS MARKETS"
             )
 
@@ -151,8 +151,8 @@ def send_category_markets(keywords, header):
         if not outcomes:
             continue
 
-        price = outcomes[0].get("price")
-        if price is None or price > MAX_PRICE_ALERT:
+        yes_price = outcomes[0].get("price")
+        if yes_price is None or yes_price > MAX_PRICE_ALERT:
             continue
 
         slug = market.get("slug")
@@ -160,7 +160,7 @@ def send_category_markets(keywords, header):
 
         msg += (
             f"{title}\n"
-            f"YES: {int(price * 100)}%\n"
+            f"YES: {int(yes_price * 100)}%\n"
             f"{link}\n\n"
         )
 
@@ -174,7 +174,7 @@ def send_category_markets(keywords, header):
 # STARTUP
 # =====================
 
-send_message("🚀 Polymarket AI Trade Bot is LIVE")
+send_message("✅ Polymarket trade bot is now running.")
 
 # =====================
 # MAIN LOOP (MODE 1)
@@ -212,38 +212,21 @@ while True:
             if trade_id in seen_trades:
                 continue
 
-            title = trade.get("title", "Unknown Market")
+            side_raw = trade.get("side", "").upper()
+            side = "YES" if side_raw == "BUY" else "NO"
+
+            title = trade.get("title", "Unknown Prediction")
             slug = trade.get("slug") or trade.get("market_slug")
             link = f"https://polymarket.com/market/{slug}"
-
-            outcomes = trade.get("outcomes")
-
-            # =====================
-            # SMART POSITION LOGIC
-            # =====================
-
-            position = None
-
-            if outcomes and isinstance(outcomes, list) and len(outcomes) >= 2:
-                # Sports-style named outcomes
-                side_raw = trade.get("side", "").upper()
-                if side_raw == "BUY":
-                    position = outcomes[0].get("name")
-                else:
-                    position = outcomes[1].get("name")
-            else:
-                # Binary markets
-                side_raw = trade.get("side", "").upper()
-                position = "YES" if side_raw == "BUY" else "NO"
 
             time_ist = datetime.fromtimestamp(
                 timestamp, IST
             ).strftime("%d %b %Y %I:%M %p IST")
 
             msg = (
-                "📢 POLYMARKET TRADE ALERT\n\n"
-                f"Market: {title}\n"
-                f"Position: {position}\n"
+                "📢 POLYMARKET TRADE\n\n"
+                f"Prediction: {title}\n"
+                f"Side: {side}\n"
                 f"Price: ${price}\n"
                 f"Size: {int(size)} shares\n"
                 f"Value: ${value:,.2f}\n"
