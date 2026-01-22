@@ -18,7 +18,7 @@ POLYMARKET_TRADES_API = "https://data-api.polymarket.com/trades?limit=500"
 POLYMARKET_MARKETS_API = "https://data-api.polymarket.com/markets?limit=100"
 
 CHECK_INTERVAL = 5
-MIN_TRADE_USD = 250   # 🔧 CHANGE WHEN NEEDED
+MIN_TRADE_USD = 500   # 🔧 CHANGE WHEN NEEDED
 
 # =====================
 # STATE
@@ -220,4 +220,5 @@ while True:
         print("Error:", e)
 
     time.sleep(CHECK_INTERVAL)
+
 
