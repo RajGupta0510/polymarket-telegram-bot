@@ -284,15 +284,29 @@ while True:
 
             title = trade.get("title", "Unknown Market")
 
-            # Position logic
-            # Position logic (correct for sports + yes/no markets)
+            # =====================
+# POSITION LOGIC (SPORTS + YES/NO SAFE)
+# =====================
+
+side_raw = trade.get("side", "").upper()
 outcome = trade.get("outcome")
 
-if outcome:
+# Sports markets usually have named outcomes (team/player names)
+if outcome and isinstance(outcome, str):
     position = outcome
+
 else:
-    side_raw = trade.get("side", "").upper()
-    position = "YES" if side_raw == "BUY" else "NO"
+    outcomes = trade.get("outcomes")
+
+    if outcomes and isinstance(outcomes, list) and len(outcomes) >= 2:
+        if side_raw == "BUY":
+            position = outcomes[0].get("name", "YES")
+        else:
+            position = outcomes[1].get("name", "NO")
+    else:
+        # Fallback for classic yes/no markets
+        position = "YES" if side_raw == "BUY" else "NO"
+
 
 
             slug = trade.get("slug") or trade.get("market_slug")
@@ -323,4 +337,5 @@ else:
         print("Error:", e)
 
     time.sleep(CHECK_INTERVAL)
+
 
