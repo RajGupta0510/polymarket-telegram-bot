@@ -17,13 +17,16 @@ CHAT_ID = int(os.getenv("CHAT_ID"))
 POLYMARKET_TRADES_API = "https://data-api.polymarket.com/trades?limit=500"
 POLYMARKET_MARKETS_API = "https://data-api.polymarket.com/markets?limit=200"
 
-CHECK_INTERVAL = 5   # seconds (near real-time)
+# =====================
+# LIVE CONFIG (CONTROLLED FROM TELEGRAM)
+# =====================
 
-MIN_TRADE_USD = 500        # 🔥 whale filter
-MAX_PRICE_ALERT = 0.60     # 🔥 max price filter (60 cents)
+CHECK_INTERVAL = 5
+MIN_TRADE_USD = 500
+MAX_PRICE_ALERT = 0.60
 
 # =====================
-# STATE (MODE 1)
+# STATE
 # =====================
 
 last_update_id = 0
@@ -44,7 +47,6 @@ def send_message(text):
         "disable_web_page_preview": True
     }
     requests.post(url, json=payload, timeout=10)
-
 
 # =====================
 # MARKET LIVE TIME
@@ -90,11 +92,11 @@ def fetch_market_live_time(slug):
     return "Not Provided by API"
 
 # =====================
-# TELEGRAM COMMANDS
+# TELEGRAM COMMAND HANDLER
 # =====================
 
 def handle_commands():
-    global last_update_id
+    global last_update_id, CHECK_INTERVAL, MIN_TRADE_USD, MAX_PRICE_ALERT
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
     params = {"offset": last_update_id + 1, "timeout": 10}
@@ -109,7 +111,41 @@ def handle_commands():
         if chat_id != CHAT_ID:
             continue
 
-        if text.startswith("/price"):
+        # ===== LIVE CONTROL COMMANDS =====
+
+        if text.startswith("/minusd"):
+            try:
+                MIN_TRADE_USD = float(text.split()[1])
+                send_message(f"✅ MIN USD set to: ${MIN_TRADE_USD}")
+            except:
+                send_message("❌ Usage: /minusd 500")
+
+        elif text.startswith("/maxprice"):
+            try:
+                MAX_PRICE_ALERT = float(text.split()[1])
+                send_message(f"✅ MAX PRICE set to: {MAX_PRICE_ALERT}")
+            except:
+                send_message("❌ Usage: /maxprice 0.60")
+
+        elif text.startswith("/interval"):
+            try:
+                CHECK_INTERVAL = int(text.split()[1])
+                send_message(f"⚡ CHECK INTERVAL set to: {CHECK_INTERVAL}s")
+            except:
+                send_message("❌ Usage: /interval 2")
+
+        elif text.startswith("/status"):
+            send_message(
+                f"📊 CURRENT SETTINGS\n\n"
+                f"MIN USD: ${MIN_TRADE_USD}\n"
+                f"MAX PRICE: {MAX_PRICE_ALERT}\n"
+                f"INTERVAL: {CHECK_INTERVAL}s\n"
+                f"MODE: Global\n"
+            )
+
+        # ===== MARKET COMMANDS =====
+
+        elif text.startswith("/price"):
             send_price_markets()
 
         elif text.startswith("/sports"):
@@ -168,18 +204,10 @@ def send_price_markets():
         slug = market.get("slug")
         link = f"https://polymarket.com/market/{slug}"
 
-        msg += (
-            f"{title}\n"
-            f"YES: {int(yes_price * 100)}¢\n"
-            f"{link}\n\n"
-        )
-
+        msg += f"{title}\nYES: {int(yes_price*100)}¢\n{link}\n\n"
         count += 1
         if count >= 6:
             break
-
-    if count == 0:
-        msg += "No matching price markets found under filters."
 
     send_message(msg.strip())
 
@@ -208,18 +236,10 @@ def send_category_markets(keywords, header):
         slug = market.get("slug")
         link = f"https://polymarket.com/market/{slug}"
 
-        msg += (
-            f"{title}\n"
-            f"YES: {int(yes_price * 100)}¢\n"
-            f"{link}\n\n"
-        )
-
+        msg += f"{title}\nYES: {int(yes_price*100)}¢\n{link}\n\n"
         count += 1
         if count >= 6:
             break
-
-    if count == 0:
-        msg += "No matching markets found under filters."
 
     send_message(msg.strip())
 
@@ -227,10 +247,10 @@ def send_category_markets(keywords, header):
 # STARTUP
 # =====================
 
-send_message("🚀 Polymarket AI Trade Bot is LIVE")
+send_message("🚀 Polymarket AI Trade Bot is LIVE (Live Control Enabled)")
 
 # =====================
-# MAIN LOOP (MODE 1)
+# MAIN LOOP
 # =====================
 
 while True:
@@ -245,11 +265,9 @@ while True:
             size = float(trade.get("size", 0))
             value = price * size
 
-            # 🔥 Price filter
             if price > MAX_PRICE_ALERT:
                 continue
 
-            # 🔥 USD whale filter
             if value < MIN_TRADE_USD:
                 continue
 
@@ -261,15 +279,22 @@ while True:
                 f"{size}"
             )
 
-            # ✅ MODE 1 DEDUP
             if trade_id in seen_trades:
                 continue
 
             title = trade.get("title", "Unknown Market")
 
-            # Position logic (sports + yes/no support)
+            # Position logic
             side_raw = trade.get("side", "").upper()
-            position = trade.get("outcome") or ("YES" if side_raw == "BUY" else "NO")
+            outcomes = trade.get("outcomes")
+
+            if outcomes and isinstance(outcomes, list) and len(outcomes) >= 2:
+                if side_raw == "BUY":
+                    position = outcomes[0].get("name")
+                else:
+                    position = outcomes[1].get("name")
+            else:
+                position = "YES" if side_raw == "BUY" else "NO"
 
             slug = trade.get("slug") or trade.get("market_slug")
             link = f"https://polymarket.com/market/{slug}"
