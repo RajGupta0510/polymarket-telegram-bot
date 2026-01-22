@@ -285,13 +285,14 @@ while True:
             title = trade.get("title", "Unknown Market")
 
             # =====================
+# =====================
 # POSITION LOGIC (SPORTS + YES/NO SAFE)
 # =====================
 
 side_raw = trade.get("side", "").upper()
 outcome = trade.get("outcome")
 
-# Sports markets usually have named outcomes (team/player names)
+# Sports markets (team/player names)
 if outcome and isinstance(outcome, str):
     position = outcome
 
@@ -304,7 +305,7 @@ else:
         else:
             position = outcomes[1].get("name", "NO")
     else:
-        # Fallback for classic yes/no markets
+        # Classic yes/no fallback
         position = "YES" if side_raw == "BUY" else "NO"
 
             slug = trade.get("slug") or trade.get("market_slug")
@@ -335,6 +336,7 @@ else:
         print("Error:", e)
 
     time.sleep(CHECK_INTERVAL)
+
 
 
 
