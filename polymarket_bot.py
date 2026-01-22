@@ -1,170 +1,232 @@
 import os
-import requests
 import time
+import requests
 from datetime import datetime, timezone, timedelta
 
-# =============================
+# =====================
 # TELEGRAM CONFIG
-# =============================
+# =====================
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = int(os.getenv("CHAT_ID"))
 
-# =============================
+# =====================
 # POLYMARKET CONFIG
-# =============================
-POLYMARKET_TRADES_API = "https://data-api.polymarket.com/trades?limit=100"
-POLYMARKET_MARKETS_API = "https://data-api.polymarket.com/markets?limit=200"
+# =====================
 
-CHECK_INTERVAL = 5              # seconds
-MIN_TRADE_USD = 500             # minimum USD alert
-MAX_PRICE_ALERT = 0.60          # max YES/NO price alert
+POLYMARKET_TRADES_API = "https://data-api.polymarket.com/trades?limit=500"
+POLYMARKET_MARKETS_API = "https://data-api.polymarket.com/markets?limit=100"
 
-# =============================
-# STATE
-# =============================
-last_seen_timestamp = 0
-last_trade_ids = set()
+CHECK_INTERVAL = 5
 
-# =============================
-# TELEGRAM FUNCTIONS
-# =============================
+MIN_TRADE_USD = 500        # 🔥 whale filter
+MAX_PRICE_ALERT = 0.60     # 🔥 price filter (60 cents)
+
+# =====================
+# STATE (MODE 1)
+# =====================
+
+last_update_id = 0
+seen_trades = set()
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+# =====================
+# TELEGRAM HELPERS
+# =====================
 
 def send_message(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    data = {"chat_id": CHAT_ID, "text": text}
-    requests.post(url, json=data)
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": text,
+        "disable_web_page_preview": True
+    }
+    requests.post(url, json=payload, timeout=10)
 
-
-def get_updates(offset=None):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
-    if offset:
-        url += f"?offset={offset}"
-    return requests.get(url).json()
-
-# =============================
-# TIME UTILS
-# =============================
-
-def utc_to_ist(ts):
-    ist = timezone(timedelta(hours=5, minutes=30))
-    dt = datetime.fromtimestamp(ts, timezone.utc).astimezone(ist)
-    return dt.strftime("%d %b %Y %I:%M %p IST")
-
-# =============================
-# MARKET SEARCH
-# =============================
-
-def search_markets(keyword):
-    res = requests.get(POLYMARKET_MARKETS_API).json()
-    results = []
-    for m in res:
-        title = m.get("title", "")
-        if keyword.lower() in title.lower():
-            results.append(m)
-    return results[:15]
-
-# =============================
-# COMMAND HANDLER
-# =============================
 
 def handle_commands():
     global last_update_id
-    updates = get_updates(last_update_id + 1 if 'last_update_id' in globals() else None)
 
-    if not updates.get("result"):
-        return
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+    params = {"offset": last_update_id + 1, "timeout": 10}
+    data = requests.get(url, params=params, timeout=15).json()
 
-    for u in updates["result"]:
-        last_update_id = u["update_id"]
-        msg = u.get("message", {})
-        text = msg.get("text", "")
+    for update in data.get("result", []):
+        last_update_id = update["update_id"]
+        msg = update.get("message", {})
+        text = msg.get("text", "").lower().strip()
+        chat_id = msg.get("chat", {}).get("id")
+
+        if chat_id != CHAT_ID:
+            continue
 
         if text.startswith("/price"):
-            markets = search_markets("price")
-            reply = "📊 PRICE MARKETS (POLYMARKET)\n\n"
-            for m in markets:
-                title = m.get("title")
-                slug = m.get("slug")
-                link = f"https://polymarket.com/market/{slug}"
-                reply += f"• {title}\n{link}\n\n"
-            send_message(reply)
+            send_price_markets()
 
-        if text.startswith("/sports"):
-            markets = search_markets("vs")
-            reply = "🏟 SPORTS MARKETS\n\n"
-            for m in markets[:15]:
-                title = m.get("title")
-                slug = m.get("slug")
-                link = f"https://polymarket.com/market/{slug}"
-                reply += f"• {title}\n{link}\n\n"
-            send_message(reply)
+        elif text.startswith("/sports"):
+            send_category_markets(
+                ["win", "match", "vs", "final", "league", "cup"],
+                "🏟️ SPORTS MARKETS"
+            )
 
-        if text.startswith("/nba"):
-            markets = search_markets("NBA")
-            send_list("🏀 NBA MARKETS", markets)
+        elif text.startswith("/nba"):
+            send_category_markets(
+                ["nba", "lakers", "warriors", "celtics", "bucks"],
+                "🏀 NBA MARKETS"
+            )
 
-        if text.startswith("/ufc"):
-            markets = search_markets("UFC")
-            send_list("🥊 UFC MARKETS", markets)
+        elif text.startswith("/ufc"):
+            send_category_markets(
+                ["ufc", "fight", "knockout", "submission"],
+                "🥊 UFC MARKETS"
+            )
 
-        if text.startswith("/cricket"):
-            markets = search_markets("Cricket")
-            send_list("🏏 CRICKET MARKETS", markets)
+        elif text.startswith("/cricket"):
+            send_category_markets(
+                ["cricket", "ipl", "odi", "t20", "test"],
+                "🏏 CRICKET MARKETS"
+            )
 
-        if text.startswith("/geopolitics"):
-            markets = search_markets("war")
-            send_list("🌍 GEOPOLITICS", markets)
+        elif text.startswith("/geopolitics"):
+            send_category_markets(
+                ["war", "conflict", "china", "taiwan",
+                 "russia", "ukraine", "israel", "iran"],
+                "🌍 GEOPOLITICS MARKETS"
+            )
 
+# =====================
+# MARKET COMMANDS
+# =====================
 
-def send_list(title, markets):
-    reply = f"{title}\n\n"
-    for m in markets[:15]:
-        name = m.get("title")
-        slug = m.get("slug")
+def send_price_markets():
+    res = requests.get(POLYMARKET_MARKETS_API, timeout=15).json()
+
+    msg = "📊 POLYMARKET PRICE MARKETS\n\n"
+    count = 0
+
+    for market in res:
+        title = market.get("title", "")
+        if "price" not in title.lower():
+            continue
+
+        outcomes = market.get("outcomes", [])
+        if not outcomes:
+            continue
+
+        yes_price = outcomes[0].get("price")
+        if yes_price is None or yes_price > MAX_PRICE_ALERT:
+            continue
+
+        slug = market.get("slug")
         link = f"https://polymarket.com/market/{slug}"
-        reply += f"• {name}\n{link}\n\n"
-    send_message(reply)
 
-# =============================
-# MAIN LOOP
-# =============================
+        msg += (
+            f"{title}\n"
+            f"YES: {int(yes_price * 100)}%\n"
+            f"{link}\n\n"
+        )
 
-send_message("🚀 Polymarket AI Trade Bot is LIVE")
+        count += 1
+        if count >= 6:
+            break
+
+    send_message(msg.strip())
+
+
+def send_category_markets(keywords, header):
+    res = requests.get(POLYMARKET_MARKETS_API, timeout=15).json()
+
+    msg = f"{header}\n\n"
+    count = 0
+
+    for market in res:
+        title = market.get("title", "")
+        title_lower = title.lower()
+
+        if not any(k in title_lower for k in keywords):
+            continue
+
+        outcomes = market.get("outcomes", [])
+        if not outcomes:
+            continue
+
+        yes_price = outcomes[0].get("price")
+        if yes_price is None or yes_price > MAX_PRICE_ALERT:
+            continue
+
+        slug = market.get("slug")
+        link = f"https://polymarket.com/market/{slug}"
+
+        msg += (
+            f"{title}\n"
+            f"YES: {int(yes_price * 100)}%\n"
+            f"{link}\n\n"
+        )
+
+        count += 1
+        if count >= 6:
+            break
+
+    send_message(msg.strip())
+
+# =====================
+# STARTUP
+# =====================
+
+send_message("✅ Polymarket trade bot is now running.")
+
+# =====================
+# MAIN LOOP (MODE 1)
+# =====================
 
 while True:
     try:
         handle_commands()
-        trades = requests.get(POLYMARKET_TRADES_API).json()
+
+        trades = requests.get(POLYMARKET_TRADES_API, timeout=15).json()
 
         for trade in trades:
-            trade_id = trade.get("id")
-            if trade_id in last_trade_ids:
-                continue
-
-            timestamp = trade.get("timestamp", 0)
-            market = trade.get("title", "Unknown Market")
+            timestamp = trade.get("timestamp")
             price = float(trade.get("price", 0))
             size = float(trade.get("size", 0))
             value = price * size
 
-            if value < MIN_TRADE_USD:
-                continue
-
+            # 🔥 PRICE FILTER
             if price > MAX_PRICE_ALERT:
                 continue
 
+            # 🔥 USD FILTER
+            if value < MIN_TRADE_USD:
+                continue
+
+            trade_id = (
+                f"{timestamp}-"
+                f"{trade.get('slug')}-"
+                f"{trade.get('side')}-"
+                f"{price}-"
+                f"{size}"
+            )
+
+            # ✅ MODE 1 DEDUP
+            if trade_id in seen_trades:
+                continue
+
+            side_raw = trade.get("side", "").upper()
+            side = "YES" if side_raw == "BUY" else "NO"
+
+            title = trade.get("title", "Unknown Prediction")
             slug = trade.get("slug") or trade.get("market_slug")
-            link = f"https://polymarket.com/market/{slug}" if slug else "https://polymarket.com"
+            link = f"https://polymarket.com/market/{slug}"
 
-            outcome = trade.get("outcome") or trade.get("side")
-
-            # IST Time
-            time_ist = utc_to_ist(timestamp)
+            time_ist = datetime.fromtimestamp(
+                timestamp, IST
+            ).strftime("%d %b %Y %I:%M %p IST")
 
             msg = (
-                "📢 POLYMARKET TRADE ALERT\n\n"
-                f"Market: {market}\n"
-                f"Position: {outcome}\n"
+                "📢 POLYMARKET TRADE\n\n"
+                f"Prediction: {title}\n"
+                f"Side: {side}\n"
                 f"Price: ${price}\n"
                 f"Size: {int(size)} shares\n"
                 f"Value: ${value:,.2f}\n"
@@ -173,10 +235,9 @@ while True:
             )
 
             send_message(msg)
-            last_trade_ids.add(trade_id)
-
-        time.sleep(CHECK_INTERVAL)
+            seen_trades.add(trade_id)
 
     except Exception as e:
         print("Error:", e)
-        time.sleep(5)
+
+    time.sleep(CHECK_INTERVAL)
