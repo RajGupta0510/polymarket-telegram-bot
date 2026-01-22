@@ -111,7 +111,7 @@ def handle_commands():
         if chat_id != CHAT_ID:
             continue
 
-        # ===== LIVE CONTROL COMMANDS =====
+        # ===== LIVE CONTROL =====
 
         if text.startswith("/minusd"):
             try:
@@ -285,28 +285,27 @@ while True:
             title = trade.get("title", "Unknown Market")
 
             # =====================
-# =====================
-# POSITION LOGIC (SPORTS + YES/NO SAFE)
-# =====================
+            # POSITION LOGIC (SPORTS + YES/NO SAFE)
+            # =====================
 
-side_raw = trade.get("side", "").upper()
-outcome = trade.get("outcome")
+            side_raw = trade.get("side", "").upper()
+            outcome = trade.get("outcome")
 
-# Sports markets (team/player names)
-if outcome and isinstance(outcome, str):
-    position = outcome
+            # Sports markets → team/player name
+            if outcome and isinstance(outcome, str):
+                position = outcome
 
-else:
-    outcomes = trade.get("outcomes")
+            else:
+                outcomes = trade.get("outcomes")
 
-    if outcomes and isinstance(outcomes, list) and len(outcomes) >= 2:
-        if side_raw == "BUY":
-            position = outcomes[0].get("name", "YES")
-        else:
-            position = outcomes[1].get("name", "NO")
-    else:
-        # Classic yes/no fallback
-        position = "YES" if side_raw == "BUY" else "NO"
+                if outcomes and isinstance(outcomes, list) and len(outcomes) >= 2:
+                    if side_raw == "BUY":
+                        position = outcomes[0].get("name", "YES")
+                    else:
+                        position = outcomes[1].get("name", "NO")
+                else:
+                    # Classic YES/NO markets
+                    position = "YES" if side_raw == "BUY" else "NO"
 
             slug = trade.get("slug") or trade.get("market_slug")
             link = f"https://polymarket.com/market/{slug}"
@@ -336,7 +335,3 @@ else:
         print("Error:", e)
 
     time.sleep(CHECK_INTERVAL)
-
-
-
-
