@@ -285,16 +285,15 @@ while True:
             title = trade.get("title", "Unknown Market")
 
             # Position logic
-            side_raw = trade.get("side", "").upper()
-            outcomes = trade.get("outcomes")
+            # Position logic (correct for sports + yes/no markets)
+outcome = trade.get("outcome")
 
-            if outcomes and isinstance(outcomes, list) and len(outcomes) >= 2:
-                if side_raw == "BUY":
-                    position = outcomes[0].get("name")
-                else:
-                    position = outcomes[1].get("name")
-            else:
-                position = "YES" if side_raw == "BUY" else "NO"
+if outcome:
+    position = outcome
+else:
+    side_raw = trade.get("side", "").upper()
+    position = "YES" if side_raw == "BUY" else "NO"
+
 
             slug = trade.get("slug") or trade.get("market_slug")
             link = f"https://polymarket.com/market/{slug}"
@@ -324,3 +323,4 @@ while True:
         print("Error:", e)
 
     time.sleep(CHECK_INTERVAL)
+
