@@ -307,8 +307,6 @@ else:
         # Fallback for classic yes/no markets
         position = "YES" if side_raw == "BUY" else "NO"
 
-
-
             slug = trade.get("slug") or trade.get("market_slug")
             link = f"https://polymarket.com/market/{slug}"
 
@@ -337,5 +335,6 @@ else:
         print("Error:", e)
 
     time.sleep(CHECK_INTERVAL)
+
 
 
